@@ -165,7 +165,7 @@ async def main():
 
     # הוספת handlers
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('help',_above_command))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     application.add_error_handler(error_handler)
 
