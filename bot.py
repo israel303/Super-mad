@@ -6,6 +6,15 @@ from PIL import Image
 import io
 import asyncio
 import re
+from fastapi import FastAPI
+from uvicorn import Config, Server
+
+# הגדרת FastAPI
+app = FastAPI()
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 # הגדרת לוגים
 logging.basicConfig(
@@ -29,31 +38,19 @@ logger.info(f"Using python-telegram-bot version {TG_VER}")
 # פונקציה: הסרת מילים מוגדרות מראש משם הקובץ
 def remove_english_words(filename: str) -> str:
     try:
-        # פיצול שם הקובץ לבסיס וסיומת
         base, ext = os.path.splitext(filename)
-        
-        # קריאת המילים מהקובץ
         if not os.path.exists(WORDS_FILE_PATH):
             logger.error(f"קובץ {WORDS_FILE_PATH} לא נמצא, מחזיר שם קובץ מקורי")
             return filename
-        
         with open(WORDS_FILE_PATH, 'r', encoding='utf-8') as f:
             words_to_remove = [line.strip() for line in f if line.strip()]
-        
-        # הסרת המילים המוגדרות (גם אם הן חלק ממילה גדולה יותר)
         cleaned_base = base
         for word in words_to_remove:
             pattern = re.escape(word)
             cleaned_base = re.sub(pattern, '', cleaned_base, flags=re.IGNORECASE)
-        
-        # הסרת רווחים או _ מיותרים והחלפתם ברווח בודד
         cleaned_base = re.sub(r'[_|\s]+', ' ', cleaned_base.strip())
-        
-        # אם שם הבסיס ריק לאחר הניקוי, החלף בשם ברירת מחדל
         if not cleaned_base:
             cleaned_base = "file"
-        
-        # שילוב הבסיס המנוקה עם הסיומת
         return f"{cleaned_base}{ext}"
     except Exception as e:
         logger.error(f"שגיאה בניקוי שם קובץ: {e}")
@@ -98,27 +95,18 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text('קיבלתי את הקובץ, רגע אחד...')
 
     try:
-        # הורדת הקובץ
         file_obj = await document.get_file()
         input_file = f'temp_{document.file_name}'
         await file_obj.download_to_drive(input_file)
-
-        # הכנת thumbnail
         thumb_io = await prepare_thumbnail()
         error_message = None
         if not thumb_io:
             error_message = 'לא הצלחתי להוסיף תמונה, אבל הנה הקובץ שלך.'
-
-        # הסרת מילים מוגדרות משם הקובץ
         original_filename = document.file_name
         cleaned_filename = remove_english_words(original_filename)
-        
-        # הוספת "_OldTown" לפני הסיומת, תוך המרת רווחים ל-_ בסוף השם
         base, ext = os.path.splitext(cleaned_filename)
         base = base.strip()
         new_filename = f"{base.replace(' ', '_')}_OldTown{ext}"
-
-        # שליחת הקובץ
         with open(input_file, 'rb') as f:
             await context.bot.send_document(
                 chat_id=update.message.chat_id,
@@ -127,10 +115,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 thumbnail=thumb_io if thumb_io else None,
                 caption=error_message or 'ספריית אולדטאון - https://t.me/OldTownew'
             )
-
-        # ניקוי קבצים זמניים
         os.remove(input_file)
-
     except Exception as e:
         logger.error(f"שגיאה בטיפול בקובץ: {e}")
         await update.message.reply_text('משהו השתבש. תנסה שוב?')
@@ -187,10 +172,15 @@ async def main():
     application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     application.add_error_handler(error_handler)
 
-    # הגדרת Webhook
+    # הרצת FastAPI ו-Webhook בו זמנית
     port = int(os.getenv('PORT', 8443))
+    uvicorn_config = Config(app=app, host='0.0.0.0', port=port)
+    uvicorn_server = Server(uvicorn_config)
 
     try:
+        # הרצת FastAPI
+        fastapi_task = asyncio.create_task(uvicorn_server.serve())
+        # הרצת Webhook של Telegram
         await application.initialize()
         await application.start()
         await application.updater.start_webhook(
@@ -199,18 +189,19 @@ async def main():
             url_path=token,
             webhook_url=webhook_url
         )
-        logger.info(f"הבוט רץ עם Webhook על פורט {port}")
-        while True:
-            await asyncio.sleep(3600)
+        logger.info(f"הבוט ו-FastAPI רצים על פורט {port}")
+        await fastapi_task
     except Exception as e:
         logger.error(f"שגיאה בלולאה הראשית: {e}")
         await application.stop()
         await application.shutdown()
+        await uvicorn_server.close()
         raise
     finally:
         await application.stop()
         await application.shutdown()
-        logger.info("הבוט נסגר")
+        await uvicorn_server.close()
+        logger.info("הבוט ו-FastAPI נסגרו")
 
 if __name__ == '__main__':
     try:
