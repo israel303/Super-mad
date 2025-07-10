@@ -35,8 +35,8 @@ RUN pip install --upgrade pip && \
 COPY . .
 
 # וידוא שקובץ thumbnail.jpg ו-words_to_remove.txt קיימים
-RUN test -f thumbnail.jpg || { echo "thumbnail.jpg not found!"; exit 1; } && \
-    test -f words_to_remove.txt || { echo "words_to_remove.txt not found!"; exit 1; }
+RUN test -f thumbnail.jpg || { echo "thumbnail.jpg not found!"; exit 1; }
+RUN test -f words_to_remove.txt || { echo "words_to_remove.txt not found!"; exit 1; }
 
 # שינוי הרשאות למשתמש appuser
 RUN chown -R appuser:appuser /app
