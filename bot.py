@@ -13,6 +13,27 @@ import json
 # הגדרת FastAPI
 app = FastAPI()
 
+# נתיב health check עבור UptimeRobot (תמיכה ב-GET ו-HEAD)
+@app.get("/health")
+@app.head("/health")
+async def health_check():
+    return {"status": "ok"}
+
+# נתיב Webhook של Telegram
+@app.post("/{token}")
+async def telegram_webhook(token: str, request: Request):
+    if token != os.getenv('TELEGRAM_TOKEN'):
+        logger.error("טוקן Webhook לא תקין")
+        return Response(status_code=403)
+    try:
+        update = await request.json()
+        update = Update.de_json(update, application.bot)
+        await application.process_update(update)
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"שגיאה בטיפול ב-Webhook: {e}")
+        return Response(status_code=500)
+
 # הגדרת לוגים
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -35,26 +56,6 @@ application = None
 
 # רישום גרסת python-telegram-bot
 logger.info(f"Using python-telegram-bot version {TG_VER}")
-
-# נתיב health check עבור UptimeRobot
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
-
-# נתיב Webhook של Telegram
-@app.post("/{token}")
-async def telegram_webhook(token: str, request: Request):
-    if token != os.getenv('TELEGRAM_TOKEN'):
-        logger.error("טוקן Webhook לא תקין")
-        return Response(status_code=403)
-    try:
-        update = await request.json()
-        update = Update.de_json(update, application.bot)
-        await application.process_update(update)
-        return Response(status_code=200)
-    except Exception as e:
-        logger.error(f"שגיאה בטיפול ב-Webhook: {e}")
-        return Response(status_code=500)
 
 # פונקציה: הסרת מילים מוגדרות מראש משם הקובץ
 def remove_english_words(filename: str) -> str:
