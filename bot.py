@@ -148,6 +148,11 @@ async def main():
         logger.error(f"קובץ thumbnail {THUMBNAIL_PATH} לא נמצא!")
         return
 
+    # בדיקת קובץ words_to_remove.txt
+    if not os.path.exists(WORDS_FILE_PATH):
+        logger.error(f"קובץ {WORDS_FILE_PATH} לא נמצא!")
+        return
+
     # קבלת הטוקן
     token = os.getenv('TELEGRAM_TOKEN')
     if not token:
@@ -163,9 +168,22 @@ async def main():
     # יצירת האפליקציה
     application = Application.builder().token(token).build()
 
+    # בדיקה והגדרת Webhook
+    try:
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"מצב Webhook נוכחי: {webhook_info}")
+        if webhook_info.url != webhook_url:
+            await application.bot.set_webhook(url=webhook_url)
+            logger.info(f"Webhook הוגדר מחדש לכתובת: {webhook_url}")
+        else:
+            logger.info(f"Webhook כבר מוגדר: {webhook_url}")
+    except Exception as e:
+        logger.error(f"שגיאה בבדיקה/הגדרת Webhook: {e}")
+        return
+
     # הוספת handlers
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('help', help_command))  # תיקון השגיאה
+    application.add_handler(CommandHandler('help', help_command))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     application.add_error_handler(error_handler)
 
@@ -174,8 +192,6 @@ async def main():
 
     try:
         await application.initialize()
-        await application.bot.set_webhook(url=webhook_url)
-        logger.info(f"Webhook הוגדר לכתובת {webhook_url}")
         await application.start()
         await application.updater.start_webhook(
             listen='0.0.0.0',
@@ -183,6 +199,7 @@ async def main():
             url_path=token,
             webhook_url=webhook_url
         )
+        logger.info(f"הבוט רץ עם Webhook על פורט {port}")
         while True:
             await asyncio.sleep(3600)
     except Exception as e:
