@@ -6,15 +6,12 @@ from PIL import Image
 import io
 import asyncio
 import re
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from uvicorn import Config, Server
+import json
 
 # הגדרת FastAPI
 app = FastAPI()
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
 
 # הגדרת לוגים
 logging.basicConfig(
@@ -32,8 +29,32 @@ BASE_URL = os.getenv('BASE_URL', 'https://groky.onrender.com')
 # נתיב לקובץ המילים שיוסרו
 WORDS_FILE_PATH = 'words_to_remove.txt'
 
+# יצירת אפליקציית Telegram
+token = os.getenv('TELEGRAM_TOKEN')
+application = None
+
 # רישום גרסת python-telegram-bot
 logger.info(f"Using python-telegram-bot version {TG_VER}")
+
+# נתיב health check עבור UptimeRobot
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+# נתיב Webhook של Telegram
+@app.post("/{token}")
+async def telegram_webhook(token: str, request: Request):
+    if token != os.getenv('TELEGRAM_TOKEN'):
+        logger.error("טוקן Webhook לא תקין")
+        return Response(status_code=403)
+    try:
+        update = await request.json()
+        update = Update.de_json(update, application.bot)
+        await application.process_update(update)
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"שגיאה בטיפול ב-Webhook: {e}")
+        return Response(status_code=500)
 
 # פונקציה: הסרת מילים מוגדרות מראש משם הקובץ
 def remove_english_words(filename: str) -> str:
@@ -128,6 +149,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # פונקציה ראשית
 async def main():
+    global application
     # בדיקת קובץ thumbnail
     if not os.path.exists(THUMBNAIL_PATH):
         logger.error(f"קובץ thumbnail {THUMBNAIL_PATH} לא נמצא!")
@@ -153,6 +175,12 @@ async def main():
     # יצירת האפליקציה
     application = Application.builder().token(token).build()
 
+    # הוספת handlers
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+    application.add_error_handler(error_handler)
+
     # בדיקה והגדרת Webhook
     try:
         webhook_info = await application.bot.get_webhook_info()
@@ -166,36 +194,18 @@ async def main():
         logger.error(f"שגיאה בבדיקה/הגדרת Webhook: {e}")
         return
 
-    # הוספת handlers
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-    application.add_error_handler(error_handler)
-
-    # הרצת FastAPI ו-Webhook בו זמנית
+    # הרצת שרת FastAPI
     port = int(os.getenv('PORT', 8443))
     uvicorn_config = Config(app=app, host='0.0.0.0', port=port)
     uvicorn_server = Server(uvicorn_config)
 
     try:
-        # הרצת FastAPI
-        fastapi_task = asyncio.create_task(uvicorn_server.serve())
-        # הרצת Webhook של Telegram
         await application.initialize()
         await application.start()
-        await application.updater.start_webhook(
-            listen='0.0.0.0',
-            port=port,
-            url_path=token,
-            webhook_url=webhook_url
-        )
         logger.info(f"הבוט ו-FastAPI רצים על פורט {port}")
-        await fastapi_task
+        await uvicorn_server.serve()
     except Exception as e:
         logger.error(f"שגיאה בלולאה הראשית: {e}")
-        await application.stop()
-        await application.shutdown()
-        await uvicorn_server.close()
         raise
     finally:
         await application.stop()
