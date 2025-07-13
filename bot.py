@@ -58,7 +58,7 @@ application = None
 logger.info(f"Using python-telegram-bot version {TG_VER}")
 
 # פונקציה: הסרת מילים מוגדרות מראש משם הקובץ
-def remove_english_words(filename: str) -> str:
+def remove_words(filename: str) -> str:
     try:
         base, ext = os.path.splitext(filename)
         if not os.path.exists(WORDS_FILE_PATH):
@@ -114,7 +114,7 @@ async def prepare_thumbnail() -> io.BytesIO:
 # טיפול בקבצים
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     document = update.message.document
-    await update.message.reply_text('קיבלתי את הקובץ, רגע אחד...')
+    status_message = await update.message.reply_text('קיבלתי את הקובץ, רגע אחד...')
 
     try:
         file_obj = await document.get_file()
@@ -135,12 +135,14 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 document=f,
                 filename=new_filename,
                 thumbnail=thumb_io if thumb_io else None,
-                caption=error_message or 'ספריית אולדטאון - https://t.me/OldTownew'
+                caption=error_message or 'ספריית אולדטאון - https://t.me/OldTownBackup'
             )
         os.remove(input_file)
+        await status_message.delete()  # מחיקת ההודעה
     except Exception as e:
         logger.error(f"שגיאה בטיפול בקובץ: {e}")
         await update.message.reply_text('משהו השתבש. תנסה שוב?')
+        await status_message.delete()  # מחיקת ההודעה גם במקרה של שגיאה
 
 # טיפול בשגיאות
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
