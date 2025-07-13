@@ -58,7 +58,7 @@ application = None
 logger.info(f"Using python-telegram-bot version {TG_VER}")
 
 # פונקציה: הסרת מילים מוגדרות מראש משם הקובץ
-def remove_words(filename: str) -> str:
+def remove_english_words(filename: str) -> str:
     try:
         base, ext = os.path.splitext(filename)
         if not os.path.exists(WORDS_FILE_PATH):
